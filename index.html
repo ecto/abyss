@@ -1,0 +1,88 @@
+<!doctype html>
+<html>
+<head>
+<title>Hophop</title>
+<style>
+body, html {
+  padding: 0;
+  margin: 0;
+}
+</style>
+<script src="/js/jquery.js"></script>
+<script src="/js/three.js"></script>
+<script src="/js/objectdetect.js"></script>
+<script src="/js/jquery.objectdetect.js"></script>
+<script src="/js/objectdetect.frontalface.js"></script>
+<script>
+var camera, scene, renderer;
+var geometry, material, mesh;
+var mouseX = 0, mouseY = 0;
+var windowHalfX = window.innerWidth / 2;
+var windowHalfY = window.innerHeight / 2;
+var video
+
+window.requestAnimFrame = (function(){
+  return  window.requestAnimationFrame       || 
+          window.webkitRequestAnimationFrame || 
+          window.mozRequestAnimationFrame    || 
+          window.oRequestAnimationFrame      || 
+          window.msRequestAnimationFrame     || 
+          function( callback ){
+            window.setTimeout(callback, 1000 / 60);
+          };
+})();
+
+navigator.getUserMedia = (
+  navigator.getUserMedia ||
+  navigator.webkitGetUserMedia ||
+  navigator.mozGetUserMedia ||
+  navigator.msGetUserMedia
+);
+
+$(window).load(init);
+
+function init () {
+  video = $('#video').get(0);
+
+  console.log(navigator.getUserMedia);
+  navigator.getUserMedia({
+    video: true
+  }, function(stream) {
+    console.log(stream);
+    try {
+      video.src = window.URL ? window.URL.createObjectURL(stream) : window.webkitURL.createObjectURL(stream);
+    } catch (error) {
+      console.log(error.stack);
+      video.src = stream;
+    }
+    video.play();
+    window.requestAnimationFrame(tick);
+  }, function (error) {
+    alert('WebRTC not available');
+    console.log(error);
+  });
+  console.log(video);
+}
+
+function tick () {
+  window.requestAnimationFrame(tick);
+  var options = {
+    scaleMin: 3,
+    scaleFactor: 1.1,
+    classifier: objectdetect.frontalface
+  };
+
+  $(video).objectdetect('all', options, function (coords) {
+    if (coords[0]) {
+      // x, y, width, height
+      console.log(coords);
+    }
+  });
+}
+
+</script>
+</head>
+<body>
+  <video id="video"></video>
+</body>
+</html>
