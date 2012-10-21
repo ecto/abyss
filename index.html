@@ -1,25 +1,99 @@
 <!doctype html>
 <html>
 <head>
-<title>Hophop</title>
+<title>Abyss</title>
 <style>
 body, html {
   padding: 0;
   margin: 0;
 }
+
+body {
+  background: #000;
+}
+
+#video {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  width: 200px;
+  height: 150px;
+  -webkit-transform: rotateY(180deg);
+}
+
+#measure {
+  background: #000;
+  opacity: 0.5;
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1px;
+  bottom: 0;
+  -webkit-transition: left 0.2s linear;
+  display: none;
+}
+
+@font-face {
+  font-family: Visitor;
+  font-weight: normal;
+  src: url('visitor.ttf');
+}
+
+#score {
+  position: absolute;
+  top: 20px;
+  right: 50px;
+  color: #fff;
+  font-size: 100px;
+  font-family: Visitor, monospace;
+  display: none;
+}
+
+#logo {
+  display: block;
+  text-align: center;
+  margin: 300px auto 0;
+  font-family: Visitor, monospace;
+  font-size: 200px;
+  color: #fff;
+}
+
+#help {
+  color: #fff;
+  font-family: Visitor, monospace;
+  margin-top: 100px;
+  display: block;
+  text-align: center;
+}
+
+canvas {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
 </style>
 <script src="/js/jquery.js"></script>
+<script src="/js/jquery-ui.js"></script>
 <script src="/js/three.js"></script>
+<script src="/js/buzz.js"></script>
 <script src="/js/objectdetect.js"></script>
 <script src="/js/jquery.objectdetect.js"></script>
 <script src="/js/objectdetect.frontalface.js"></script>
 <script>
 var camera, scene, renderer;
-var geometry, material, mesh;
+var geometry, material, world;
 var mouseX = 0, mouseY = 0;
 var windowHalfX = window.innerWidth / 2;
 var windowHalfY = window.innerHeight / 2;
-var video
+var $video, $score;
+var speed = 0;
+var score = 0;
+var player;
+var paused = true;
+var playerVelocity;
 
 window.requestAnimFrame = (function(){
   return  window.requestAnimationFrame       || 
@@ -41,48 +115,363 @@ navigator.getUserMedia = (
 
 $(window).load(init);
 
-function init () {
-  video = $('#video').get(0);
+var introSound = new buzz.sound('/intro.wav');
+var boomSound = new buzz.sound('/boom.wav');
+var ambientSound = new buzz.sound('/ambient.wav');
+introSound.play().loop();
 
-  console.log(navigator.getUserMedia);
+function init () {
+  $video = $('#video').get(0);
+  $score = $('#score');
+
   navigator.getUserMedia({
     video: true
-  }, function(stream) {
-    console.log(stream);
+  }, success, error);
+
+  function success (stream) {
     try {
-      video.src = window.URL ? window.URL.createObjectURL(stream) : window.webkitURL.createObjectURL(stream);
+      $video.src = window.URL ? window.URL.createObjectURL(stream) : window.webkitURL.createObjectURL(stream);
     } catch (error) {
       console.log(error.stack);
-      video.src = stream;
+      $video.src = stream;
     }
-    video.play();
-    window.requestAnimationFrame(tick);
-  }, function (error) {
+
+    startGame();
+  }
+
+  function error (error) {
     alert('WebRTC not available');
     console.log(error);
+  }
+
+  renderer = new THREE.WebGLRenderer({
+    preserveDrawingBuffer: true,
+    antialias: true
   });
-  console.log(video);
+
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 10000);
+  camera.position.z = 1000;
+
+  scene = new THREE.Scene();
+
+  document.body.appendChild(renderer.domElement);
+  window.addEventListener('resize', resize, false);
+
+  geometry = new THREE.PlaneGeometry(1, 1);
+  material = new THREE.MeshBasicMaterial({
+    wireframe: true,
+    opacity: 0.1,
+    color: 0x00FF00
+  });
+
+  world = new THREE.Mesh(geometry, material);
+  world.position.y = 0;
+  scene.add(world);
+
+  player = new THREE.Mesh(
+    new THREE.CircleGeometry(20, 20),
+    new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      antialias: true
+    })
+  );
+
+  world.add(player);
+
+  wiggleLogo();
 }
 
-function tick () {
-  window.requestAnimationFrame(tick);
-  var options = {
-    scaleMin: 3,
-    scaleFactor: 1.1,
-    classifier: objectdetect.frontalface
-  };
+function wiggleLogo () {
+  $('#logo').animate({
+    letterSpacing: 100,
+    fontSize: 250
+  }, 2000);
 
-  $(video).objectdetect('all', options, function (coords) {
-    if (coords[0]) {
-      // x, y, width, height
-      console.log(coords);
+  $('#help').animate({
+    marginLeft: -100
+  }, 2000);
+}
+
+var timers = {};
+function startGame () {
+  $('#logo').stop().hide();
+  $('#help').stop().hide();
+  $('canvas').show();
+  $('#score').show();
+  $('#measure').show();
+  $('body').animate({
+    backgroundColor: '#fff'
+  }, 1000);
+
+  $video.play();
+  timers.speed = setInterval(increaseSpeed, 1000);
+  timers.background = setInterval(setBackgroundColor, 5000);
+  timers.tick = setInterval(tick, 100);
+
+  introSound.stop();
+  boomSound.play();
+  ambientSound.play().loop();
+  paused = false;
+
+  world.position.y = 0;
+  player.position.y = 0;
+  playerVelocity = 0;
+  speed = 2;
+  generateWorld();
+  animate();
+}
+
+function stopGame () {
+  paused = true;
+  for (var i in timers) {
+    clearInterval(timers[i]);
+  }
+
+  $('#measure').fadeOut();
+  $('body').stop().animate({
+    backgroundColor: '#ff0000'
+  }, 100);
+
+  $('#logo').
+    text('game over').
+    css({
+      display: 'block',
+      opacity: 0
+    }).
+    animate({
+      letterSpacing: 100,
+      fontSize: 200,
+      opacity: 1
+    }, 2000);
+
+  setTimeout(function () {
+    if (confirm('Make it harder?')) {
+      startGame();
     }
+  }, 2000);
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  if (paused) return;
+  render();
+}
+
+function render () {
+  if (world.position.y > -player.position.y || playerVelocity == 0) {
+    world.position.y += speed;
+  } else {
+    world.position.y = -player.position.y;
+  }
+
+  score = Math.floor(world.position.y / 10);
+  $score.text(score);
+
+  camera.lookAt(scene.position);
+  renderer.render(scene, camera);
+
+  if (world.position.y > levelDistance * (levelsMade - 10)) {
+    destroyMostPlatforms();
+    generateWorld(levelsMade);
+  }
+
+  moveCamera();
+  obeyPhysics();
+}
+
+function moveCamera () {
+  var shouldBeAt = -1 * ((position - 0.5) * 1000);
+  var difference = camera.position.x - shouldBeAt;
+  var velocity = 30;
+  var delta = Math.min(velocity, Math.max(-velocity, difference));
+  camera.position.x -= delta;
+}
+
+function obeyPhysics () {
+  // move left/right
+  player.position.x = (position - 0.5) * 2000;
+
+  // check for loss
+  if (-player.position.y < world.position.y - 750) {
+    stopGame();
+    return;
+  }
+
+  // check for platform collisions
+  var looseLevel = -player.position.y / levelDistance;
+  if (checkForCollisions(platforms[Math.floor(looseLevel)])) {
+    playerVelocity = 0;
+    return;
+  }
+
+  // fall
+  if (playerVelocity < 10) playerVelocity += 1;
+  player.position.y -= playerVelocity;
+}
+
+function checkForCollisions (platforms) {
+  // this has to make sure that
+    // player x < (platform x + platform width)
+    // (player x + player width) > platform x
+    // (player y + player height) > platform y - 1
+    // (player y + player height) < platform y + platform height
+  // for any platform
+  // if so, return true
+  for (var i in platforms) {
+    var platform = platforms[i].mesh;
+
+    if (
+      player.position.x <= platform.position.x + platform.width && // right
+      player.position.x + 40 >= platform.position.x && // left
+      player.position.y + 20 >= platform.position.y - playerVelocity && // player bottom, platform top
+      player.position.y <= platform.position.y // player bottom, platform bottom
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function resize () {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function increaseSpeed () {
+  speed += 0.2;
+}
+
+var colors = [
+  '#ffffff',
+  '#ff9900',
+  '#fcff03',
+  '#00ffff',
+  '#0000ff',
+  '#940aff',
+  '#ff06aa'
+];
+
+function setBackgroundColor () {
+  var color = colors.pop();
+
+  $('body').animate({
+    backgroundColor: color
+  }, 5000);
+
+  colors.unshift(color);
+}
+
+function destroyMostPlatforms () {
+  for (var i = 0; i < platforms.length - 10; i++) {
+    for (var p in platforms[i]) {
+      platforms[i][p].destroy();
+    }
+    platforms[i] = void 0;
+  }
+}
+
+function maybeRemovePlatforms () {
+  var currentLevel = world.position.y / levelDistance;
+  var absoluteLevel = Math.floor(currentLevel);
+  var lastLevel = platforms[absoluteLevel - 65];
+
+  if (currentLevel > absoluteLevel && lastLevel) {
+    for (var i in lastLevel) {
+      lastLevel[i].destroy();
+    }
+  }
+}
+
+var recognitionOptions = {
+  scaleMin: 3,
+  scaleFactor: 1.1,
+  classifier: objectdetect.frontalface
+};
+
+function detectFaces (cb) {
+  $(video).objectdetect('all', recognitionOptions, cb);
+}
+
+var lastFace;
+var position = 0.5; // 0 to 1
+
+function tick () {
+  detectFaces(function (coords) {
+    if (!coords[0]) return; // no faces
+    lastFace = coords[0];
+    var x = coords[0][0];
+    var w = coords[0][2];
+    var m = x + (w / 2);
+    var p = m / 640;
+    position = 1 - (p * 1.25);
+    renderMeasure();
   });
+}
+
+function renderMeasure () {
+  $('#measure').css({
+    left: window.innerWidth * position
+  });
+}
+
+var platforms = {};
+var levelDistance = 200;
+var levelsMade = 0;
+
+function generateWorld (startLevel) {
+  destroyMostPlatforms();
+  startLevel = startLevel || 0;
+  var levels = 100;
+
+  for (var level = startLevel; level < levels + startLevel; level++) {
+    var platformsForLevel = Math.ceil(Math.random() * 3);
+    var levelPlatforms = [];
+
+    for (var p = 0; p < platformsForLevel; p++) {
+      var x = (Math.random() - 0.5) * 4000;
+      var y = level * levelDistance;
+      var w = Math.random() * 400;
+      levelPlatforms.push(new Platform(x, y, w));
+    }
+
+    platforms[level] = levelPlatforms;
+    levelsMade++;
+  }
+}
+
+function Platform (x, y, w) {
+  w = w + 10;
+  this.geometry = new THREE.PlaneGeometry(w, 5);
+  this.material = new THREE.MeshBasicMaterial({
+    color: 0x000000
+  });
+
+  this.mesh = new THREE.Mesh(this.geometry, this.material);
+  this.mesh.position.x = (w / 2) - x;
+  this.mesh.position.y = -y;
+  this.mesh.position.z = 0;
+  this.mesh.width = w; // placeholder for collision detection
+
+  this.render();
+}
+
+Platform.prototype.render = function () {
+  world.add(this.mesh);
+}
+
+Platform.prototype.destroy = function () {
+  world.remove(this.mesh);
 }
 
 </script>
 </head>
 <body>
   <video id="video"></video>
+  <div id="measure"></div>
+  <div id="score">0</div>
+  <div id="logo">Abyss</div>
+  <div id="help">Select your webcam above and press "Allow" to begin playing</div>
 </body>
 </html>
