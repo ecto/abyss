@@ -75,13 +75,13 @@ canvas {
   bottom: 0;
 }
 </style>
-<script src="/js/jquery.js"></script>
-<script src="/js/jquery-ui.js"></script>
-<script src="/js/three.js"></script>
-<script src="/js/buzz.js"></script>
-<script src="/js/objectdetect.js"></script>
-<script src="/js/jquery.objectdetect.js"></script>
-<script src="/js/objectdetect.frontalface.js"></script>
+<script src="js/jquery.js"></script>
+<script src="js/jquery-ui.js"></script>
+<script src="js/three.js"></script>
+<script src="js/buzz.js"></script>
+<script src="js/objectdetect.js"></script>
+<script src="js/jquery.objectdetect.js"></script>
+<script src="js/objectdetect.frontalface.js"></script>
 <script>
 var camera, scene, renderer;
 var geometry, material, world;
@@ -115,9 +115,9 @@ navigator.getUserMedia = (
 
 $(window).load(init);
 
-var introSound = new buzz.sound('/intro.wav');
-var boomSound = new buzz.sound('/boom.wav');
-var ambientSound = new buzz.sound('/ambient.wav');
+var introSound = new buzz.sound('intro.wav');
+var boomSound = new buzz.sound('boom.wav');
+var ambientSound = new buzz.sound('ambient.wav');
 introSound.play().loop();
 
 function init () {
